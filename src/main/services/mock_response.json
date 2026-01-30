@@ -1,0 +1,27 @@
+{
+  "guion_mejorado": "Escuché un rasguño bajo mi cama. Bajé la mano para calmar a mi perro. Unas manos frías la sujetaron. Mi perro estaba rascando la puerta del pasillo.",
+  "escenas": [
+    {
+      "texto": "Escuché un rasguño bajo mi cama.",
+      "descripcion_visual": "Cinematic horror scene, dark bedroom at night, a pale demonic hand reaching from under the bed"
+    },
+    {
+      "texto": "Bajé la mano para calmar a mi perro.",
+      "descripcion_visual": "A person lowering their hand towards the floor in a dark room"
+    },
+    {
+      "texto": "Unas manos frías la sujetaron.",
+      "descripcion_visual": "Pale cold hands grabbing a human hand under a bed"
+    },
+    {
+      "texto": "Mi perro estaba rascando la puerta del pasillo.",
+      "descripcion_visual": "A dog scratching a door in a dimly lit hallway"
+    }
+  ],
+  "prompts_imagen": [
+    "Imagen fotorrealista de alta calidad: Cinematic horror scene, dark bedroom at night, a pale demonic hand reaching from under the bed. Estilo cinematográfico, iluminación profesional, 4K.",
+    "Imagen fotorrealista de alta calidad: A person lowering their hand towards the floor in a dark room. Estilo cinematográfico, iluminación profesional, 4K.",
+    "Imagen fotorrealista de alta calidad: Pale cold hands grabbing a human hand under a bed. Estilo cinematográfico, iluminación profesional, 4K.",
+    "Imagen fotorrealista de alta calidad: A dog scratching a door in a dimly lit hallway. Estilo cinematográfico, iluminación profesional, 4K."
+  ]
+}

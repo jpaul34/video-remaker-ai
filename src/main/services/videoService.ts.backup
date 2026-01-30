@@ -1,0 +1,627 @@
+import { spawn, exec } from "child_process";
+import path from "path";
+import fs from "fs";
+import os from "os";
+import ffmpeg from "fluent-ffmpeg";
+import { app } from "electron";
+
+// Configure FFmpeg path
+const getFfmpegPath = () => {
+  const possiblePaths = [
+    path.join(process.cwd(), "resources", "ffmpeg.exe"),
+    path.join(process.cwd(), "resources", "ffmpeg"),
+    path.join(__dirname, "../../resources/ffmpeg.exe"), // For dev/prod structure
+    "ffmpeg",
+  ];
+
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+  return "ffmpeg";
+};
+
+const ffmpegPath = getFfmpegPath();
+console.log("Using FFmpeg path:", ffmpegPath);
+ffmpeg.setFfmpegPath(ffmpegPath);
+
+export const downloadTikTokAudio = (url: string): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const outputPath = path.join(process.cwd(), "temp", "audio.mp3");
+    const ytDlpPath = path.join(process.cwd(), "resources", "yt-dlp.exe");
+
+    // Ensure temp directory exists
+    const tempDir = path.join(process.cwd(), "temp");
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const ytdlp = spawn(ytDlpPath, [
+      "-x",
+      "--audio-format",
+      "mp3",
+      "-o",
+      outputPath,
+      url,
+    ]);
+
+    ytdlp.on("close", (code) => {
+      if (code === 0) {
+        resolve(outputPath);
+      } else {
+        reject(new Error(`yt-dlp exited with code ${code}`));
+      }
+    });
+
+    ytdlp.on("error", reject);
+  });
+};
+
+export const generateVoice = async (
+  text: string,
+  voiceName: string = "es-MX-DaliaNeural",
+  outputPath: string,
+): Promise<{ audioPath: string; vttPath: string }> => {
+  return new Promise((resolve, reject) => {
+    const vttPath = outputPath.replace(/\.[^/.]+$/, ".vtt");
+
+    // edge-tts command
+    const edgeTts = spawn("python", [
+      "-m",
+      "edge_tts",
+      "--voice",
+      voiceName,
+      "--text",
+      text,
+      "--write-media",
+      outputPath,
+      "--write-subtitles",
+      vttPath,
+    ]);
+
+    let errorOutput = "";
+
+    edgeTts.stderr.on("data", (data) => {
+      errorOutput += data.toString();
+    });
+
+    edgeTts.on("close", (code) => {
+      if (code === 0 && fs.existsSync(outputPath)) {
+        resolve({ audioPath: outputPath, vttPath });
+      } else {
+        reject(new Error(`edge-tts failed: ${errorOutput}`));
+      }
+    });
+
+    edgeTts.on("error", (err) => {
+      reject(new Error(`Failed to start edge-tts: ${err.message}`));
+    });
+  });
+};
+
+export const getAudioDuration = (filePath: string): Promise<number> => {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(metadata.format.duration || 0);
+      }
+    });
+  });
+};
+
+export const trimAudio = (
+  inputPath: string,
+  outputPath: string,
+  duration: number,
+): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .duration(duration)
+      .output(outputPath)
+      .on("end", () => resolve())
+      .on("error", (err) =>
+        reject(new Error(`Failed to trim audio: ${err.message}`)),
+      )
+      .run();
+  });
+};
+
+interface VideoConfig {
+  imagesDir: string;
+  audioPath: string;
+  outputPath: string;
+  duration: number;
+  framePath?: string;
+  avatarPath?: string;
+  avatarPosition?: string;
+  avatarSize?: number;
+  avatarChromaKey?: string;
+  subtitleStyle?: {
+    color: string;
+    size: number;
+    style?: string;
+    wordsPerLine?: number;
+  };
+  subtitles?: Array<{
+    text: string;
+    start: number;
+    end: number;
+  }>;
+  aspectRatio?: "16:9" | "9:16" | "1:1" | "3:4";
+}
+
+export const createVideo = (config: VideoConfig): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const {
+      imagesDir,
+      audioPath,
+      outputPath,
+      duration,
+      framePath,
+      subtitleStyle = { color: "#FFFFFF", size: 32 },
+      aspectRatio = "16:9",
+    } = config;
+
+    // Normalize all paths to use forward slashes for FFmpeg compatibility
+    const normAudioPath = audioPath.replace(/\\/g, "/");
+    const normFramePath = framePath ? framePath.replace(/\\/g, "/") : undefined;
+
+    // Ensure output directory exists
+    const outputDir = path.dirname(outputPath);
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    // Use temp directory for FFmpeg output to avoid permission/path issues
+    const tempDir = path.join(process.cwd(), "temp");
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    const tempOutputPath = path
+      .join(tempDir, `video_${Date.now()}.mp4`)
+      .replace(/\\/g, "/");
+
+    // Define resolutions based on aspect ratio
+    const resolutions = {
+      "16:9": { w: 1280, h: 720 },
+      "9:16": { w: 720, h: 1280 },
+      "1:1": { w: 1080, h: 1080 },
+      "3:4": { w: 810, h: 1080 },
+    };
+    const { w, h } = resolutions[aspectRatio] || resolutions["16:9"];
+
+    // Get all images from directory
+    const images = fs
+      .readdirSync(imagesDir)
+      .filter((file) => /\.(jpg|jpeg|png)$/i.test(file))
+      .map((file) => path.join(imagesDir, file))
+      .sort();
+
+    if (images.length === 0) {
+      return reject(new Error("No images found in directory"));
+    }
+
+    // Calculate duration per image
+    const durationPerImage = duration / images.length;
+
+    // Create input file list for ffmpeg
+    const inputListPath = path.join(path.dirname(outputPath), "input_list.txt");
+    const inputListContent = images
+      .map(
+        (img) =>
+          `file '${img.replace(/\\/g, "/")}'\nduration ${durationPerImage}`,
+      )
+      .join("\n");
+    fs.writeFileSync(inputListPath, inputListContent);
+
+    // Build ffmpeg command
+    let command = ffmpeg();
+
+    // Input: concat images with Ken Burns effect
+    command = command
+      .input(inputListPath)
+      .inputOptions(["-f", "concat", "-safe", "0"])
+      .videoFilters([
+        // Ken Burns effect (zoom and pan)
+        `zoompan=z='min(zoom+0.0015,1.5)':d=${durationPerImage * 25}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${w}x${h}`,
+        "format=yuv420p",
+      ]);
+
+    // Add audio
+    if (fs.existsSync(audioPath)) {
+      command = command
+        .input(normAudioPath)
+        .inputOptions(["-t", `${duration}`]); // Limit audio duration
+    }
+
+    // Add frame overlay if provided (simple overlay without complexFilter)
+    if (framePath && normFramePath && fs.existsSync(framePath)) {
+      command = command.input(normFramePath);
+    }
+
+    // Add subtitles if provided
+    let srtPath = "";
+    if (config.subtitles && config.subtitles.length > 0) {
+      srtPath = path.join(tempDir, "subtitles.srt");
+      const srtContent = config.subtitles
+        .map((sub, index) => {
+          const startTime = new Date(sub.start * 1000)
+            .toISOString()
+            .substr(11, 12)
+            .replace(".", ",");
+          const endTime = new Date(sub.end * 1000)
+            .toISOString()
+            .substr(11, 12)
+            .replace(".", ",");
+          return `${index + 1}\n${startTime} --> ${endTime}\n${sub.text}\n`;
+        })
+        .join("\n");
+      fs.writeFileSync(srtPath, srtContent);
+
+      // Escape path for ffmpeg filter
+      const escapedSrtPath = srtPath.replace(/\\/g, "/");
+
+      // Calculate proportional styling
+      const marginH = Math.round(w * 0.15);
+      const marginV = Math.round(h * 0.05);
+      const safeWidth = w - marginH * 2;
+
+      const proportionalFontSize = Math.round(
+        safeWidth * 0.06 * (subtitleStyle.size / 100),
+      );
+
+      // Color conversion: HTML #RRGGBB to FFmpeg &HBBGGRR
+      const hexColor = subtitleStyle.color.replace("#", "");
+      const r = hexColor.substr(0, 2);
+      const g = hexColor.substr(2, 2);
+      const b = hexColor.substr(4, 2);
+      const bgrColor = `&H${b}${g}${r}`;
+
+      let style = `Fontname=Arial,FontSize=${proportionalFontSize},PrimaryColour=${bgrColor},MarginL=${marginH},MarginR=${marginH},MarginV=${marginV},Alignment=2`;
+
+      // Apply extra styling
+      if (subtitleStyle.style === "outline") {
+        style += `,BorderStyle=1,Outline=2,OutlineColour=&H000000`;
+      } else if (subtitleStyle.style === "background") {
+        style += `,BorderStyle=3,Outline=0,BackColour=&H80000000`;
+      } else {
+        style += `,BorderStyle=0,Outline=0`;
+      }
+
+      command = command.videoFilters(
+        `subtitles='${escapedSrtPath}':force_style='${style}'`,
+      );
+    }
+
+    // Output settings
+    command = command
+      .outputOptions([
+        "-c:v",
+        "libx264",
+        "-preset",
+        "medium",
+        "-crf",
+        "23",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-t",
+        `${duration}`, // Force exact duration
+        "-shortest",
+      ])
+      .output(tempOutputPath);
+
+    // Handle events
+    command.on("start", (commandLine) => {
+      console.log("FFmpeg command:", commandLine);
+    });
+
+    command.on("progress", (progress) => {
+      console.log(`Processing: ${progress.percent}% done`);
+    });
+
+    command.on("end", () => {
+      try {
+        // Copy from temp to final location
+        fs.copyFileSync(tempOutputPath, outputPath);
+
+        // Clean up temp files
+        if (fs.existsSync(inputListPath)) {
+          fs.unlinkSync(inputListPath);
+        }
+        if (srtPath && fs.existsSync(srtPath)) {
+          fs.unlinkSync(srtPath);
+        }
+        if (fs.existsSync(tempOutputPath)) {
+          fs.unlinkSync(tempOutputPath);
+        }
+
+        resolve(outputPath);
+      } catch (e: any) {
+        reject(new Error(`Failed to finalize video: ${e.message}`));
+      }
+    });
+
+    command.on("error", (err) => {
+      reject(new Error(`FFmpeg error: ${err.message}`));
+    });
+
+    // Run the command
+    command.run();
+  });
+};
+
+/**
+ * Add avatar overlay to an existing video using post-processing
+ * This avoids conflicts with videoFilters by processing in a separate step
+ */
+export const addAvatarOverlay = async (
+  videoPath: string,
+  avatarPath: string,
+  position: string = "bottom-right",
+  size: number = 100,
+  chromaKey: string = "none",
+  includeAudio: boolean = false,
+): Promise<string> => {
+  // Wait a bit to ensure file locks are released
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  return new Promise((resolve, reject) => {
+    // Normalize paths for FFmpeg (use forward slashes)
+    const normVideoPath = videoPath.replace(/\\/g, "/");
+    const normAvatarPath = avatarPath.replace(/\\/g, "/");
+
+    ffmpeg.ffprobe(normVideoPath, (err, metadata) => {
+      if (err) return reject(err);
+
+      const mainVideo = metadata.streams.find((s) => s.codec_type === "video");
+      const mainHeight = mainVideo?.height || 720;
+      const duration = metadata.format.duration || 0;
+
+      // Calculate safe even dimensions
+      let targetHeight = Math.round((mainHeight * size) / 100);
+      if (targetHeight % 2 !== 0) targetHeight += 1;
+
+      // Create temp output path in project temp dir to avoid permission/path issues
+      const tempDir = path.join(process.cwd(), "temp");
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+      const tempFileName = `avatar_overlay_${Date.now()}.mp4`;
+      const tempOutputPath = path
+        .join(tempDir, tempFileName)
+        .replace(/\\/g, "/");
+
+      console.log(
+        `Processing avatar overlay: ${normVideoPath} -> ${tempOutputPath}`,
+      );
+
+      const positions: { [key: string]: string } = {
+        "bottom-right": `W-w:H-h`,
+        "bottom-left": `0:H-h`,
+        "top-right": `W-w:0`,
+        "top-left": `0:0`,
+      };
+
+      const overlayPosition = positions[position] || positions["bottom-right"];
+
+      // Build filter string
+      let filterString = `[1:v]scale=-2:${targetHeight}`;
+
+      if (chromaKey !== "none") {
+        const chromaKeyColors: { [key: string]: string } = {
+          green: "0x00FF00",
+          blue: "0x0000FF",
+          red: "0xFF0000",
+          white: "0xFFFFFF",
+          black: "0x000000",
+        };
+        const keyColor = chromaKeyColors[chromaKey] || "0x00FF00";
+        filterString += `,colorkey=${keyColor}:0.3:0.2`;
+      }
+
+      filterString += `[avatar];[0:v][avatar]overlay=${overlayPosition}:shortest=1`;
+
+      const isVideo = normAvatarPath.toLowerCase().match(/\.(mp4|webm|mov)$/);
+      const inputOptions = isVideo ? ["-stream_loop", "-1"] : ["-loop", "1"];
+
+      console.log("Filter:", filterString);
+
+      ffmpeg(normVideoPath)
+        .input(normAvatarPath)
+        .inputOptions(inputOptions)
+        .complexFilter(filterString)
+        .outputOptions([
+          "-y",
+          "-c:v",
+          "libx264",
+          "-preset",
+          "ultrafast",
+          "-crf",
+          "28",
+          "-pix_fmt",
+          "yuv420p",
+          "-c:a",
+          "aac",
+          "-f",
+          "mp4", // Explicit format
+          "-shortest",
+        ])
+        .output(tempOutputPath)
+        .on("start", (cmd) => {
+          console.log("=== FFmpeg Command Start ===");
+          console.log(cmd);
+          console.log("============================");
+        })
+        .on("stderr", (stderrLine) => {
+          console.log("FFmpeg Stderr:", stderrLine);
+        })
+        .on("progress", (p) => {
+          if (p.percent)
+            console.log(`Avatar overlay: ${p.percent.toFixed(2)}%`);
+        })
+        .on("end", () => {
+          try {
+            // Move temp file to original location, overwriting it
+            // We use copy + unlink to be safe across partitions
+            fs.copyFileSync(tempOutputPath, videoPath);
+            fs.unlinkSync(tempOutputPath);
+            resolve(videoPath);
+          } catch (e: any) {
+            reject(
+              new Error(`Failed to finalize avatar overlay: ${e.message}`),
+            );
+          }
+        })
+        .on("error", (err) => {
+          if (fs.existsSync(tempOutputPath)) {
+            try {
+              fs.unlinkSync(tempOutputPath);
+            } catch (e) {}
+          }
+          reject(new Error(`Avatar overlay error: ${err.message}`));
+        })
+        .run();
+    });
+  });
+};
+
+// Helper to parse VTT time string "00:00:00,000" to seconds
+const parseVttTime = (timeStr: string): number => {
+  const [h, m, s] = timeStr.split(":");
+  const [sec, ms] = s.split(",");
+  return (
+    parseInt(h) * 3600 + parseInt(m) * 60 + parseInt(sec) + parseInt(ms) / 1000
+  );
+};
+
+// Helper to parse VTT file
+const parseVTT = (
+  vttPath: string,
+): Array<{ start: number; end: number; text: string }> => {
+  if (!fs.existsSync(vttPath)) return [];
+
+  const content = fs.readFileSync(vttPath, "utf-8");
+  const lines = content
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l);
+  const segments: Array<{ start: number; end: number; text: string }> = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes("-->")) {
+      const [startStr, endStr] = lines[i].split(" --> ");
+      const text = lines[i + 1];
+      if (text) {
+        segments.push({
+          start: parseVttTime(startStr),
+          end: parseVttTime(endStr),
+          text: text,
+        });
+      }
+    }
+  }
+  return segments;
+};
+
+export const generateSubtitles = (
+  script: string,
+  duration: number,
+  vttPath?: string,
+): Array<{ text: string; start: number; end: number }> => {
+  if (!vttPath || !fs.existsSync(vttPath)) {
+    console.warn("No VTT found, falling back to simple sync");
+    const words = script.trim().split(/\s+/);
+    const totalCharacters = words.reduce((acc, word) => acc + word.length, 0);
+    const timePerChar = (duration * 0.95) / totalCharacters;
+
+    const subtitles: Array<{ text: string; start: number; end: number }> = [];
+    let currentTime = 0;
+
+    for (const word of words) {
+      const wordDuration = word.length * timePerChar;
+      subtitles.push({
+        text: word,
+        start: currentTime,
+        end: currentTime + wordDuration,
+      });
+      currentTime += wordDuration;
+    }
+    return subtitles;
+  }
+
+  const segments = parseVTT(vttPath);
+  const subtitles: Array<{ text: string; start: number; end: number }> = [];
+
+  for (const segment of segments) {
+    const words = segment.text.trim().split(/\s+/);
+    const totalCharacters = words.reduce((acc, word) => acc + word.length, 0);
+    const segmentDuration = segment.end - segment.start;
+
+    const timePerChar = segmentDuration / totalCharacters;
+
+    let currentTime = segment.start;
+
+    for (const word of words) {
+      const wordDuration = word.length * timePerChar;
+      subtitles.push({
+        text: word,
+        start: currentTime,
+        end: currentTime + wordDuration,
+      });
+      currentTime += wordDuration;
+    }
+  }
+
+  return subtitles;
+};
+
+export const createPlaceholderImage = (
+  outputPath: string,
+  text: string,
+  width: number = 1280,
+  height: number = 720,
+): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    ffmpeg()
+      .input(`color=c=black:s=${width}x${height}`)
+      .inputFormat("lavfi")
+      .output(outputPath)
+      .frames(1)
+      .on("end", () => resolve())
+      .on("error", (err) =>
+        reject(new Error(`Failed to create placeholder image: ${err.message}`)),
+      )
+      .run();
+  });
+};
+
+/**
+ * Kills any running FFmpeg processes to prevent ghost processes
+ */
+export const killFfmpegProcesses = (): Promise<void> => {
+  return new Promise((resolve) => {
+    const command =
+      process.platform === "win32"
+        ? "taskkill /F /IM ffmpeg.exe /T"
+        : "pkill -9 ffmpeg";
+
+    exec(command, (error) => {
+      if (error) {
+        // If no process was found, it's not really an error for us
+        console.log(
+          "No FFmpeg processes to kill or error killing them:",
+          error.message,
+        );
+      } else {
+        console.log("FFmpeg processes killed successfully.");
+      }
+      resolve();
+    });
+  });
+};
+
