@@ -17,7 +17,8 @@ interface VideoGenerationParams {
   fontSize: number;
   aspectRatio: string;
   wordsPerLine: number;
-  subtitleStyleType: string;
+  borderWidth: "thin" | "medium" | "thick";
+  borderColor: string;
   useMock: boolean;
   mode: "ai" | "manual";
   manualScript?: string;
@@ -29,6 +30,10 @@ interface VideoGenerationParams {
   fontFamily: string;
   fontWeight: string;
   lineStyles: LineStyle[];
+  marginL: number;
+  marginR: number;
+  marginT: number;
+  marginB: number;
 }
 
 /**
@@ -85,7 +90,8 @@ export const useVideoGeneration = () => {
         subtitleStyle: {
           color: params.subtitleColor,
           fontSize: params.fontSize,
-          style: params.subtitleStyleType,
+          borderWidth: params.borderWidth,
+          borderColor: params.borderColor,
           wordsPerLine: params.wordsPerLine,
           linesPerSubtitle: params.linesPerSubtitle,
           position: params.subtitlePosition,
@@ -94,6 +100,10 @@ export const useVideoGeneration = () => {
           fontWeight: params.fontWeight,
           subtitleTextAlign: params.subtitleTextAlign,
           lineStyles: params.lineStyles,
+          marginL: params.marginL,
+          marginR: params.marginR,
+          marginT: params.marginT,
+          marginB: params.marginB,
         },
       };
 

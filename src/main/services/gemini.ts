@@ -166,7 +166,9 @@ export const generateVideoContent = async (
     );
 
     const scriptText = response.text || "{}";
-    const scriptData = JSON.parse(scriptText);
+    // Clean potential markdown code blocks
+    const cleanJson = scriptText.replace(/```json\n?|\n?```/g, "").trim();
+    const scriptData = JSON.parse(cleanJson);
 
     // Artificial delay to respect rate limits
     if (onProgress) onProgress("Pausando para respetar límites de API...");

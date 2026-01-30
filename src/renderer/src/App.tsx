@@ -38,7 +38,8 @@ const App: React.FC = () => {
       fontSize: config.fontSize,
       aspectRatio: config.aspectRatio,
       wordsPerLine: config.wordsPerLine,
-      subtitleStyleType: config.subtitleStyleType,
+      borderWidth: config.borderWidth,
+      borderColor: config.borderColor,
       fontWeight: config.fontWeight,
       subtitleTextAlign: config.subtitleTextAlign,
       useMock: config.useMock,
@@ -50,6 +51,10 @@ const App: React.FC = () => {
       useGeneralStyle: config.useGeneralStyle,
       fontFamily: config.fontFamily,
       lineStyles: config.lineStyles,
+      marginL: config.marginL,
+      marginR: config.marginR,
+      marginT: config.marginT,
+      marginB: config.marginB,
     });
   };
 
@@ -92,7 +97,8 @@ const App: React.FC = () => {
             aspectRatio={config.aspectRatio}
             subtitleColor={config.subtitleColor}
             fontSize={config.fontSize}
-            subtitleStyleType={config.subtitleStyleType}
+            borderWidth={config.borderWidth}
+            borderColor={config.borderColor}
             fontWeight={config.fontWeight}
             subtitlePosition={config.subtitlePosition}
             subtitleTextAlign={config.subtitleTextAlign}
@@ -118,6 +124,10 @@ const App: React.FC = () => {
             useGeneralStyle={config.useGeneralStyle}
             fontFamily={config.fontFamily}
             lineStyles={config.lineStyles}
+            marginL={config.marginL}
+            marginR={config.marginR}
+            marginT={config.marginT}
+            marginB={config.marginB}
           />
         </div>
 

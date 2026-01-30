@@ -32,8 +32,10 @@ interface ConfigPanelProps {
   setFontSize: (value: number) => void;
   wordsPerLine: number;
   setWordsPerLine: (value: number) => void;
-  subtitleStyleType: string;
-  setSubtitleStyleType: (value: string) => void;
+  borderWidth: "thin" | "medium" | "thick";
+  setBorderWidth: (value: "thin" | "medium" | "thick") => void;
+  borderColor: string;
+  setBorderColor: (value: string) => void;
   fontWeight: string;
   setFontWeight: (value: string) => void;
   subtitlePosition: string;
@@ -60,6 +62,14 @@ interface ConfigPanelProps {
   setManualScript: (value: string) => void;
   manualImages: string[];
   setManualImages: (value: string[]) => void;
+  marginL: number;
+  setMarginL: (value: number) => void;
+  marginR: number;
+  setMarginR: (value: number) => void;
+  marginT: number;
+  setMarginT: (value: number) => void;
+  marginB: number;
+  setMarginB: (value: number) => void;
   hasGenerated: boolean;
   handleReset: () => void;
 }
@@ -95,8 +105,10 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({
   setFontSize,
   wordsPerLine,
   setWordsPerLine,
-  subtitleStyleType,
-  setSubtitleStyleType,
+  borderWidth,
+  setBorderWidth,
+  borderColor,
+  setBorderColor,
   fontWeight,
   setFontWeight,
   subtitlePosition,
@@ -123,6 +135,14 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({
   setManualScript,
   manualImages,
   setManualImages,
+  marginL,
+  setMarginL,
+  marginR,
+  setMarginR,
+  marginT,
+  setMarginT,
+  marginB,
+  setMarginB,
   hasGenerated,
   handleReset,
 }) => {
@@ -672,20 +692,39 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Resaltado (Borde / Sombra)
-                  </label>
-                  <select
-                    className="w-full bg-[#1a1f2e] border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-all"
-                    value={subtitleStyleType}
-                    onChange={(e) => setSubtitleStyleType(e.target.value)}
-                    disabled={hasGenerated || isGenerating}
-                  >
-                    <option value="none">Ninguno</option>
-                    <option value="outline">Borde</option>
-                    <option value="shadow">Sombra</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                      Grosor del Borde
+                    </label>
+                    <select
+                      className="w-full bg-[#1a1f2e] border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-all"
+                      value={borderWidth}
+                      onChange={(e) =>
+                        setBorderWidth(
+                          e.target.value as "thin" | "medium" | "thick",
+                        )
+                      }
+                      disabled={hasGenerated || isGenerating}
+                    >
+                      <option value="thin">Mínimo</option>
+                      <option value="medium">Medio</option>
+                      <option value="thick">Grueso</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                      Color del Borde
+                    </label>
+                    <input
+                      type="color"
+                      className="w-full h-10 bg-[#1a1f2e] border border-slate-600 rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      value={borderColor}
+                      onChange={(e) => setBorderColor(e.target.value)}
+                      disabled={hasGenerated || isGenerating}
+                    />
+                  </div>
                 </div>
               </div>
             ) : (
@@ -798,29 +837,6 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({
                       <option value="normal">Normal</option>
                       <option value="semibold">Semibold</option>
                       <option value="bold">Bold (Negrita)</option>
-                    </select>
-                  </div>
-
-                  <div className="col-span-2">
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      Resaltado (Fila {activeLineTab + 1})
-                    </label>
-                    <select
-                      className="w-full bg-[#1a1f2e] border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-all"
-                      value={lineStyles[activeLineTab]?.styleType || "outline"}
-                      onChange={(e) => {
-                        const newStyles = [...lineStyles];
-                        newStyles[activeLineTab] = {
-                          ...(newStyles[activeLineTab] || {}),
-                          styleType: e.target.value,
-                        } as LineStyle;
-                        setLineStyles(newStyles);
-                      }}
-                      disabled={hasGenerated || isGenerating}
-                    >
-                      <option value="none">Ninguno</option>
-                      <option value="outline">Borde</option>
-                      <option value="shadow">Sombra</option>
                     </select>
                   </div>
                 </div>
@@ -1052,6 +1068,104 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({
                   </div>
                 </div>
               )}
+
+              {/* Safe Area Section */}
+              <div className="pt-2 border-t border-slate-700/50">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg
+                    className="w-4 h-4 text-emerald-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z"
+                    />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 4v16M15 4v16M4 9h16M4 15h16"
+                    />
+                  </svg>
+                  <span className="text-sm font-medium text-slate-300">
+                    Zona Segura (Márgenes px)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1">
+                      Izquierda (L)
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full bg-[#1a1f2e] border border-slate-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      value={marginL}
+                      onChange={(e) =>
+                        setMarginL(parseInt(e.target.value) || 0)
+                      }
+                      disabled={hasGenerated || isGenerating}
+                      min="0"
+                      max="500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1">
+                      Derecha (R)
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full bg-[#1a1f2e] border border-slate-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      value={marginR}
+                      onChange={(e) =>
+                        setMarginR(parseInt(e.target.value) || 0)
+                      }
+                      disabled={hasGenerated || isGenerating}
+                      min="0"
+                      max="500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1">
+                      Superior (T)
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full bg-[#1a1f2e] border border-slate-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      value={marginT}
+                      onChange={(e) =>
+                        setMarginT(parseInt(e.target.value) || 0)
+                      }
+                      disabled={hasGenerated || isGenerating}
+                      min="0"
+                      max="500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1">
+                      Inferior (B)
+                    </label>
+                    <input
+                      type="number"
+                      className="w-full bg-[#1a1f2e] border border-slate-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      value={marginB}
+                      onChange={(e) =>
+                        setMarginB(parseInt(e.target.value) || 0)
+                      }
+                      disabled={hasGenerated || isGenerating}
+                      min="0"
+                      max="500"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>

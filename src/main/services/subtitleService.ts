@@ -108,6 +108,10 @@ export const addSubtitlesToVideo = (
         style.subtitleTextAlign || "center",
       );
 
+      logger.log(
+        `[addSubtitlesToVideo] Style values - borderWidth: ${style.borderWidth}, borderColor: ${style.borderColor}`,
+      );
+
       const assContent = generateAssContent(subtitles, {
         fontFamily: style.fontFamily || "Arial",
         fontSize: style.fontSize || style.size || 48,
@@ -115,6 +119,12 @@ export const addSubtitlesToVideo = (
         videoWidth: width,
         videoHeight: height,
         alignment,
+        borderWidth: style.borderWidth || "medium",
+        borderColor: style.borderColor || "#000000",
+        marginL: style.marginL || 120,
+        marginR: style.marginR || 120,
+        marginT: style.marginT || 120,
+        marginB: style.marginB || 180,
       });
 
       const assPath = path.join(
@@ -142,12 +152,16 @@ export const addSubtitlesToVideo = (
         .outputOptions([
           "-vf",
           filterString,
+          "-map",
+          "0:v", // Explicitly map video
+          "-map",
+          "0:a", // Explicitly map audio
           "-c:v",
           "libx264",
           "-preset",
-          "slow",
+          "medium", // Balanced preset
           "-crf",
-          "14",
+          "23", // Standard quality
           "-c:a",
           "copy",
         ])

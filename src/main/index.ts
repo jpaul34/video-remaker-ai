@@ -138,7 +138,8 @@ ipcMain.handle("generate-complete-video", async (event, params) => {
     avatarSize,
     avatarChromaKey,
     avatarMuteAudio,
-    subtitleStyleType,
+    borderWidth,
+    borderColor,
     subtitlePosition,
     subtitleTextAlign,
     linesPerSubtitle,
@@ -147,6 +148,10 @@ ipcMain.handle("generate-complete-video", async (event, params) => {
     fontFamily,
     useGeneralStyle,
     lineStyles,
+    marginL,
+    marginR,
+    marginT,
+    marginB,
   } = params;
 
   console.log(
@@ -294,11 +299,19 @@ ipcMain.handle("generate-complete-video", async (event, params) => {
     const voiceName = voiceMap[voiceGender] || "es-MX-DaliaNeural";
 
     // Generate voice and get JSON for word-level subtitles
-    const { jsonPath: wordTimingsPath } = await generateVoice(
-      content.guion_mejorado,
-      voiceName,
-      audioPath,
-    );
+    let wordTimingsPath = "";
+    try {
+      const voiceResult = await generateVoice(
+        content.guion_mejorado,
+        voiceName,
+        audioPath,
+      );
+      wordTimingsPath = voiceResult.jsonPath;
+    } catch (err) {
+      logger.error(`[CRITICAL] Voice generation failed: ${err}`);
+      // Fallback or rethrow? If no audio, video might fail depending on flags.
+      // We'll proceed but log heavily.
+    }
 
     const audioDuration = await getAudioDuration(audioPath);
     logger.log(`Audio generado. Duración: ${audioDuration}s`);
@@ -326,63 +339,25 @@ ipcMain.handle("generate-complete-video", async (event, params) => {
               .split(/\n+/)
               .filter((s: string) => s.trim().length > 0);
           }
-          // If still mismatch, we'll fall back to equal division later
+          // If still mismatch, we'll fall back to equal division later by returning empty scenesText
         } else {
           // AI Mode
           scenesText = content.escenas?.map((e: any) => e.texto) || [];
         }
 
-        if (scenesText.length > 0) {
-          // Calculate duration for each scene based on word timings
-          let lastEndTime = 0;
-          let currentWordIdx = 0;
-
-          // Helper to normalize text for comparison
-          const normalize = (s: string) =>
-            s.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-          imageDurations = scenesText.map((sceneText, idx) => {
-            // Find the start of this scene
-            // We assume sequential order
-            let sceneStart = lastEndTime;
-            let sceneEnd = lastEndTime;
-
-            const sceneClean = normalize(sceneText);
-
-            // Verify if we can find words belonging to this scene
-            let matchedWords = 0;
-            let tempWordIdx = currentWordIdx;
-
-            // Look ahead to find the end of this scene
-            // Improved logic: Find the last word of this scene in the timeline
-            // This is a naive approximation: we sum up durations of words that "fit"
-            // A better way: match the sequence of words
-
-            // Simplified approach: Accumulate words until the text length matches approximately??
-            // No, that's brittle.
-            // Better: Find the word info that matches the scene content.
-
-            for (let i = currentWordIdx; i < wordTimings.length; i++) {
-              const w = wordTimings[i];
-              // Check if this word is roughly in the scene string
-              // This is tricky because the sceneText might differ slightly from TTS text
-              // Let's assume TTS text is a superset.
-
-              sceneEnd = w.end;
-              matchedWords++;
-
-              // How do we know we reached the end of the scene?
-              // If we have processed all chars?
-            }
-
-            // ALT STRATEGY:
-            // Since we don't have perfect mapping, let's distribute evenly based on character count relative to total?
-            // That's safer than mismatching words.
-            return 0; // Placeholder
-          });
-
-          // ACTUAL STRATEGY: Character Count Ratio
-          // This is robust and doesn't require complex string alignment
+        // CRITICAL FIX: If we still don't have matching scene counts, we MUST enforce it or the video service will fail to use custom durations.
+        // If Manual Mode and counts mismatch, assume 1:1 mapping is impossible and set imageDurations = [] to force equal distribution
+        if (
+          manualScript &&
+          manualImages &&
+          scenesText.length !== manualImages.length
+        ) {
+          logger.log(
+            `[SceneSync] Mismatch: ${scenesText.length} scenes vs ${manualImages.length} images. Forcing Equal Distribution.`,
+          );
+          imageDurations = [];
+        } else if (scenesText.length > 0) {
+          // Proceed with CharRatio calculation only if counts align or we are in AI mode (where images are generated FROM scenes)
           const fullScriptClean = scenesText.join("");
           const totalChars = fullScriptClean.length;
 
@@ -393,9 +368,9 @@ ipcMain.handle("generate-complete-video", async (event, params) => {
             });
 
             // Adjust last duration to match exact total
-            const currentTotal = imageDurations.reduce((a, b) => a + b, 0);
-            const diff = audioDuration - currentTotal;
             if (imageDurations.length > 0) {
+              const currentTotal = imageDurations.reduce((a, b) => a + b, 0);
+              const diff = audioDuration - currentTotal;
               imageDurations[imageDurations.length - 1] += diff;
             }
             logger.log(
@@ -448,13 +423,18 @@ ipcMain.handle("generate-complete-video", async (event, params) => {
         fontSize: fontSize,
         wordsPerLine: params.wordsPerLine,
         linesPerSubtitle: linesPerSubtitle,
-        style: subtitleStyleType,
+        borderWidth: borderWidth || "medium",
+        borderColor: borderColor || "#000000",
         position: subtitlePosition,
         subtitleTextAlign: subtitleTextAlign,
         useGeneralStyle: params.useGeneralStyle,
         fontFamily: params.fontFamily,
         fontWeight: params.fontWeight,
         lineStyles: params.lineStyles,
+        marginL: marginL,
+        marginR: marginR,
+        marginT: marginT,
+        marginB: marginB,
       },
       subtitles: generateSubtitles(
         content.guion_mejorado,

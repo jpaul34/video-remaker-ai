@@ -248,7 +248,13 @@ function generateAssContent(subtitles, config) {
     fontWeight,
     videoWidth,
     videoHeight,
-    alignment
+    alignment,
+    borderWidth = "medium",
+    borderColor = "#000000",
+    marginL = 120,
+    marginR = 120,
+    marginT = 120,
+    marginB = 120
   } = config;
   logger.log(
     `[generateAssContent] Config - Alignment: ${alignment}, Size: ${fontSize}, Weight: ${fontWeight}, Font: ${fontFamily}`
@@ -258,6 +264,30 @@ function generateAssContent(subtitles, config) {
   logger.log(
     `[generateAssContent] Config - Alignment: ${alignment}, Size: ${fontSize}, Font: ${fontFamily}, Res: ${playResX}x${playResY}`
   );
+  const borderWidthMap = {
+    thin: 4,
+    // Was 2, increased for visibility
+    medium: 8,
+    // Was 3, increased for visibility
+    thick: 14
+    // Was 5, increased for visibility
+  };
+  const outlineWidth = borderWidthMap[borderWidth];
+  logger.log(
+    `[generateAssContent] Border Config - borderWidth: ${borderWidth}, outlineWidth: ${outlineWidth}, borderColor: ${borderColor}`
+  );
+  const hexToAssColor2 = (hex) => {
+    const cleanHex = hex.replace("#", "");
+    if (cleanHex.length !== 6) return "&H00000000";
+    const r = cleanHex.substring(0, 2);
+    const g = cleanHex.substring(2, 4);
+    const b = cleanHex.substring(4, 6);
+    return `&H00${b}${g}${r}`.toUpperCase();
+  };
+  const outlineColorASS = hexToAssColor2(borderColor);
+  logger.log(
+    `[generateAssContent] Color conversion - Input: ${borderColor}, Output: ${outlineColorASS}`
+  );
   let content = `[Script Info]
 ScriptType: v4.00+
 PlayResX: ${playResX}
@@ -266,8 +296,8 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fontFamily},${fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,8,2,${alignment},120,120,180,1
-Style: Opaque,${fontFamily},${fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,3,24,0,${alignment},120,120,180,1
+Style: Default,${fontFamily},${fontSize},&H00FFFFFF,&H000000FF,${outlineColorASS},&H80000000,0,0,0,0,100,100,0,0,1,${outlineWidth},0,${alignment},${marginL},${marginR},${alignment >= 7 ? marginT : marginB},1
+Style: Opaque,${fontFamily},${fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,3,24,0,${alignment},${marginL},${marginR},${alignment >= 7 ? marginT : marginB},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -290,14 +320,24 @@ const groupSubtitles = (subtitles, wordsPerLine, linesPerSubtitle = 1, styling) 
   const vW = styling?.videoWidth || 1080;
   const textAlign = styling?.subtitleTextAlign;
   const fontSize = styling?.fontSize;
-  let anTag = "5";
+  const marginL = styling?.marginL ?? 120;
+  const marginR = styling?.marginR ?? 120;
+  const marginT = styling?.marginT ?? 120;
+  const marginB = styling?.marginB ?? 120;
+  const subPos = styling?.subtitlePosition;
+  const posBase = subPos.split("-")[0];
+  let hAlign = 2;
+  if (textAlign === "left") hAlign = 1;
+  if (textAlign === "right") hAlign = 3;
+  let vAlign = 0;
+  if (posBase === "top") vAlign = 6;
+  if (posBase === "middle") vAlign = 3;
+  const anTag = (vAlign + hAlign).toString();
   let targetX = vW / 2;
   if (textAlign === "left") {
-    anTag = "4";
-    targetX = 120;
+    targetX = marginL;
   } else if (textAlign === "right") {
-    anTag = "6";
-    targetX = vW - 120;
+    targetX = vW - marginR;
   }
   for (let i = 0; i < subtitles.length; i++) {
     currentGroup.push(subtitles[i]);
@@ -313,23 +353,29 @@ const groupSubtitles = (subtitles, wordsPerLine, linesPerSubtitle = 1, styling) 
           const lineIdx = Math.floor(j / wordsPerLine);
           let lineStyledText = "";
           let lineStyleName = "Default";
-          const targetY = vH / 2 + (lineIdx - (linesPerSubtitle - 1) / 2) * (fontSize * 1.5);
+          let targetY = 0;
+          if (posBase === "top") {
+            targetY = marginT + lineIdx * (fontSize * 1.5);
+          } else if (posBase === "middle") {
+            const safeHeight = vH - marginT - marginB;
+            const safeCenter = marginT + safeHeight / 2;
+            targetY = safeCenter + (lineIdx - (linesPerSubtitle - 1) / 2) * (fontSize * 1.5);
+          } else {
+            targetY = vH - marginB - (linesPerSubtitle - 1 - lineIdx) * (fontSize * 1.5);
+          }
           for (let l = 0; l < lineWords.length; l++) {
             const wordObj = lineWords[l];
             let color = styling?.subtitleColor;
             let size = styling?.fontSize;
             let font = styling?.fontFamily;
             let weight = styling?.fontWeight;
-            let stype = styling?.subtitleStyleType;
             if (styling && !styling.useGeneralStyle && styling.lineStyles?.[lineIdx]) {
               const ls = styling.lineStyles[lineIdx];
               if (ls.color) color = ls.color;
               if (ls.fontSize) size = ls.fontSize;
               if (ls.fontFamily) font = ls.fontFamily;
               if (ls.fontWeight) weight = ls.fontWeight;
-              if (ls.styleType) stype = ls.styleType;
             }
-            if (stype === "shadow") lineStyleName = "Opaque";
             const assColor = hexToAssColor(color);
             let weightTag = "\\b400";
             if (weight === "bold") weightTag = "\\b1";
@@ -337,8 +383,7 @@ const groupSubtitles = (subtitles, wordsPerLine, linesPerSubtitle = 1, styling) 
             lineStyledText += `{\\c${assColor}\\fn${font}\\fs${size}${weightTag}}${wordObj.text.toUpperCase()}`;
             if (l < lineWords.length - 1) lineStyledText += " ";
           }
-          const blurTag = lineStyleName === "Opaque" ? "\\be8" : "";
-          const finalText = `{\\an${anTag}${blurTag}\\pos(${targetX.toFixed(0)},${targetY.toFixed(0)})}${lineStyledText.trim()}`;
+          const finalText = `{\\an${anTag}\\pos(${targetX.toFixed(0)},${targetY.toFixed(0)})}${lineStyledText.trim()}`;
           finalSegments.push({
             text: finalText,
             start: startTime,
@@ -412,13 +457,22 @@ const addSubtitlesToVideo = (config) => {
         style.position || "bottom-center",
         style.subtitleTextAlign || "center"
       );
+      logger.log(
+        `[addSubtitlesToVideo] Style values - borderWidth: ${style.borderWidth}, borderColor: ${style.borderColor}`
+      );
       const assContent = generateAssContent(subtitles, {
         fontFamily: style.fontFamily || "Arial",
         fontSize: style.fontSize || style.size || 48,
         fontWeight: style.fontWeight || "bold",
         videoWidth: width,
         videoHeight: height,
-        alignment
+        alignment,
+        borderWidth: style.borderWidth || "medium",
+        borderColor: style.borderColor || "#000000",
+        marginL: style.marginL || 120,
+        marginR: style.marginR || 120,
+        marginT: style.marginT || 120,
+        marginB: style.marginB || 180
       });
       const assPath = path.join(
         path.dirname(finalOutputPath),
@@ -437,12 +491,20 @@ const addSubtitlesToVideo = (config) => {
       const ffmpegCmd = ffmpeg(normVideoPath).outputOptions([
         "-vf",
         filterString,
+        "-map",
+        "0:v",
+        // Explicitly map video
+        "-map",
+        "0:a",
+        // Explicitly map audio
         "-c:v",
         "libx264",
         "-preset",
-        "slow",
+        "medium",
+        // Balanced preset
         "-crf",
-        "14",
+        "23",
+        // Standard quality
         "-c:a",
         "copy"
       ]).output(tempOutputPath).on("start", (commandLine) => {
@@ -974,13 +1036,14 @@ const resolutions = {
   "3:4": { w: 810, h: 1080 }
 };
 const createVideo = (config) => {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     const {
       imagesDir,
       audioPath,
       outputPath,
       duration,
-      aspectRatio = "16:9"
+      aspectRatio,
+      imageDurations
     } = config;
     const normOutputPath = outputPath;
     const outputDir = path.dirname(outputPath);
@@ -993,75 +1056,114 @@ const createVideo = (config) => {
       "1:1": { w: 1080, h: 1080 },
       "3:4": { w: 810, h: 1080 }
     };
-    const { w, h } = resolutions2[aspectRatio] || resolutions2["16:9"];
-    const images = fs.readdirSync(imagesDir).filter((file) => /\.(jpg|jpeg|png|bmp)$/i.test(file)).map((file) => path.join(imagesDir, file)).sort();
+    const { w, h } = resolutions2[aspectRatio || "16:9"] || resolutions2["16:9"];
+    const images = fs.readdirSync(imagesDir).filter((file) => /\.(jpg|jpeg|png|bmp)$/i.test(file)).sort().map((file) => path.join(imagesDir, file));
     if (images.length === 0) {
-      return reject(new Error("No images found in directory"));
+      reject(new Error(`No images found in ${imagesDir}`));
+      return;
     }
-    const durationPerImage = duration / images.length;
-    const inputListPath = path.join(path.dirname(outputPath), "input_list.txt");
-    let inputListContent = images.map(
-      (img) => `file '${img.replace(/\\/g, "/")}'
-duration ${durationPerImage}`
-    ).join("\n");
-    if (images.length > 0) {
-      const lastImage = images[images.length - 1];
-      inputListContent += `
-file '${lastImage.replace(/\\/g, "/")}'`;
+    const hasCustomDurations = imageDurations && imageDurations.length === images.length;
+    const durationPerImage = hasCustomDurations ? 0 : parseFloat((duration / images.length).toFixed(2));
+    logger.log(
+      `[createVideo] Processing ${images.length} images for ${duration}s video at ${w}x${h}`
+    );
+    const tempDir = path.join(path.dirname(outputPath), "temp_segments");
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
     }
+    const videoSegments = [];
+    for (let i = 0; i < images.length; i++) {
+      const img = images[i];
+      const imgDuration = hasCustomDurations ? imageDurations[i] : durationPerImage;
+      const segmentPath = path.join(
+        tempDir,
+        `segment_${i.toString().padStart(3, "0")}.mp4`
+      );
+      await new Promise((resolveSegment, rejectSegment) => {
+        logger.log(
+          `[createVideo] Creating segment ${i + 1}/${images.length}: ${imgDuration}s`
+        );
+        ffmpeg(img).inputOptions(["-loop", "1", "-framerate", "30"]).videoFilters([
+          `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`,
+          "format=yuv420p"
+        ]).outputOptions([
+          "-c:v",
+          "libx264",
+          "-preset",
+          "ultrafast",
+          "-crf",
+          "28",
+          "-t",
+          `${imgDuration}`,
+          "-pix_fmt",
+          "yuv420p"
+        ]).output(segmentPath).on("end", () => {
+          videoSegments.push(segmentPath);
+          resolveSegment();
+        }).on("error", (err) => {
+          logger.error(`[createVideo] Segment ${i} error: ${err.message}`);
+          rejectSegment(err);
+        }).run();
+      });
+    }
+    logger.log(
+      `[createVideo] All ${videoSegments.length} segments created. Concatenating...`
+    );
+    const inputListPath = path.join(
+      path.dirname(outputPath),
+      "segments_list.txt"
+    );
+    const inputListContent = videoSegments.map((seg) => `file '${seg.replace(/\\/g, "/")}'`).join("\n");
     fs.writeFileSync(inputListPath, inputListContent);
+    logger.log(`[createVideo] Segments list created`);
     let command = ffmpeg();
     command = command.input(inputListPath).inputOptions(["-f", "concat", "-safe", "0"]);
     if (audioPath && fs.existsSync(audioPath)) {
       command = command.input(audioPath);
+      command.outputOptions(["-map", "0:v", "-map", "1:a"]);
+      command.outputOptions(["-c:a", "aac", "-b:a", "128k", "-ac", "2"]);
     }
-    const videoFilters = [
-      // Simple scale and format, no complex zoompan
-      `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`,
-      "fps=fps=30",
-      "format=yuv420p"
-    ];
-    command.videoFilters(videoFilters);
-    command = command.outputOptions([
-      "-c:v",
-      "libx264",
-      "-preset",
-      "ultrafast",
-      "-crf",
-      "28",
-      "-r",
-      // Force constant frame rate
-      "30",
-      // 30 fps
-      "-c:a",
-      "aac",
-      "-b:a",
-      "128k",
-      "-t",
-      `${duration}`
-      // Force exact duration
-    ]).output(normOutputPath);
+    command = command.outputOptions(["-c:v", "copy", "-movflags", "+faststart"]).output(normOutputPath);
     command.on("start", (commandLine) => {
-      console.log("FFmpeg Video Command:", commandLine);
+      logger.log(`[createVideo] FFmpeg Concat Command: ${commandLine}`);
     });
     command.on("progress", (progress) => {
-      console.log(`Processing Video: ${progress.percent}% done`);
+      logger.log(`[createVideo] Concat progress: ${progress.percent}% done`);
     });
     command.on("stderr", (stderrLine) => {
-      console.log("FFmpeg Video Stderr:", stderrLine);
+      logger.log(`[createVideo] Concat Stderr: ${stderrLine}`);
     });
     command.on("end", () => {
-      console.log("Video creation completed successfully.");
-      if (fs.existsSync(inputListPath)) {
-        fs.unlinkSync(inputListPath);
+      logger.log("[createVideo] FFmpeg concat 'end' event triggered");
+      if (!fs.existsSync(outputPath)) {
+        const error = new Error(
+          `FFmpeg claimed success but output file doesn't exist: ${outputPath}`
+        );
+        logger.error(`[createVideo] ${error.message}`);
+        reject(error);
+        return;
+      }
+      const fileSize = fs.statSync(outputPath).size;
+      logger.log(`[createVideo] Video completed. File size: ${fileSize} bytes`);
+      try {
+        if (fs.existsSync(inputListPath)) fs.unlinkSync(inputListPath);
+        if (fs.existsSync(tempDir)) {
+          fs.readdirSync(tempDir).forEach((file) => {
+            fs.unlinkSync(path.join(tempDir, file));
+          });
+          fs.rmdirSync(tempDir);
+        }
+      } catch (e) {
+        logger.log(`[createVideo] Cleanup warning: ${e}`);
       }
       resolve(outputPath);
     });
     command.on("error", (err, stdout, stderr) => {
-      console.error("FFmpeg Video Error:", err.message);
-      console.error("FFmpeg Video Stderr:", stderr);
+      logger.error(`[createVideo] FFmpeg Concat Error: ${err.message}`);
+      logger.error(`[createVideo] Stderr: ${stderr}`);
       reject(new Error(`FFmpeg error: ${err.message}. Stderr: ${stderr}`));
     });
+    logger.log("[createVideo] Starting final concat...");
     command.run();
   });
 };
@@ -1087,17 +1189,19 @@ const generateCompleteVideo = async (config) => {
   logger.log(
     `generateCompleteVideo: Iniciando pipeline completo. Destino: ${outputPath}`
   );
-  logger.log("generateCompleteVideo: Creando video base (imágenes + audio)...");
+  logger.log(
+    "generateCompleteVideo: Creando video base (imÃ¡genes + audio)..."
+  );
   const baseConfig = { ...config, outputPath: tempBaseVideoPath };
   let currentVideoPath = await createVideo(baseConfig);
   if (fs.existsSync(currentVideoPath)) {
     logger.log(`DEBUG: Video base creado exitosamente: ${currentVideoPath}`);
     logger.log(
-      `DEBUG: Tamaño del archivo: ${fs.statSync(currentVideoPath).size} bytes`
+      `DEBUG: TamaÃ±o del archivo: ${fs.statSync(currentVideoPath).size} bytes`
     );
   } else {
     logger.error(
-      `ERROR CRÍTICO: Video base NO fue creado: ${currentVideoPath}`
+      `ERROR CRÃTICO: Video base NO fue creado: ${currentVideoPath}`
     );
   }
   logger.log(`DEBUG: Checking Avatar Config. Path: ${config.avatarPath}`);
@@ -1164,21 +1268,27 @@ const generateCompleteVideo = async (config) => {
         subtitleColor: config.subtitleStyle?.color || "#FFFF00",
         fontSize: config.subtitleStyle?.fontSize || 48,
         fontWeight: config.subtitleStyle?.fontWeight || "bold",
-        subtitleStyleType: config.subtitleStyle?.style || "outline",
+        borderWidth: config.subtitleStyle?.borderWidth || "medium",
+        borderColor: config.subtitleStyle?.borderColor || "#000000",
         subtitleTextAlign: config.subtitleStyle?.subtitleTextAlign || "center",
+        subtitlePosition: config.subtitleStyle?.position || "bottom-center",
         lineStyles: config.subtitleStyle?.lineStyles || [],
         videoHeight: resolutions[config.aspectRatio || "16:9"].h,
-        videoWidth: resolutions[config.aspectRatio || "16:9"].w
+        videoWidth: resolutions[config.aspectRatio || "16:9"].w,
+        marginL: config.subtitleStyle?.marginL,
+        marginR: config.subtitleStyle?.marginR,
+        marginT: config.subtitleStyle?.marginT,
+        marginB: config.subtitleStyle?.marginB
       }
     );
     logger.log(
-      `generateCompleteVideo: Aplicando ${grouped.length} bloques de subtítulos (Words/Line: ${wordsPerLine})...`
+      `generateCompleteVideo: Aplicando ${grouped.length} bloques de subtÃ­tulos (Words/Line: ${wordsPerLine})...`
     );
     if (fs.existsSync(currentVideoPath)) {
-      logger.log(`DEBUG: Video para subtítulos existe: ${currentVideoPath}`);
+      logger.log(`DEBUG: Video para subtÃ­tulos existe: ${currentVideoPath}`);
     } else {
       logger.error(
-        `ERROR CRÍTICO: Video para subtítulos NO existe: ${currentVideoPath}`
+        `ERROR CRÃTICO: Video para subtÃ­tulos NO existe: ${currentVideoPath}`
       );
     }
     const videoWithSubs = await addSubtitlesToVideo({
@@ -1273,7 +1383,8 @@ const generateVideoContent = async (theme, duration, outputDir, onProgress, useM
       guion_mejorado: mockData.guion_mejorado,
       prompts_imagen: imagePrompts,
       imagenes_generadas: generatedImages,
-      duracion_estimada: `${duration} segundos`
+      duracion_estimada: `${duration} segundos`,
+      escenas: mockData.escenas || []
     };
   }
   const scriptPrompt = `
@@ -1310,7 +1421,8 @@ const generateVideoContent = async (theme, duration, outputDir, onProgress, useM
       }
     );
     const scriptText = response.text || "{}";
-    const scriptData = JSON.parse(scriptText);
+    const cleanJson = scriptText.replace(/```json\n?|\n?```/g, "").trim();
+    const scriptData = JSON.parse(cleanJson);
     if (onProgress) onProgress("Pausando para respetar límites de API...");
     await new Promise((resolve) => setTimeout(resolve, 2e3));
     const imagePrompts = scriptData.escenas.map(
@@ -1326,7 +1438,8 @@ const generateVideoContent = async (theme, duration, outputDir, onProgress, useM
       guion_mejorado: scriptData.guion_mejorado,
       prompts_imagen: imagePrompts,
       imagenes_generadas: generatedImages,
-      duracion_estimada: `${duration} segundos`
+      duracion_estimada: `${duration} segundos`,
+      escenas: scriptData.escenas || []
     };
   } catch (error) {
     console.error("Error generating video content:", error);
@@ -1459,7 +1572,8 @@ electron.ipcMain.handle("generate-complete-video", async (event, params) => {
     avatarSize,
     avatarChromaKey,
     avatarMuteAudio,
-    subtitleStyleType,
+    borderWidth,
+    borderColor,
     subtitlePosition,
     subtitleTextAlign,
     linesPerSubtitle,
@@ -1467,7 +1581,11 @@ electron.ipcMain.handle("generate-complete-video", async (event, params) => {
     fontWeight,
     fontFamily,
     useGeneralStyle,
-    lineStyles
+    lineStyles,
+    marginL,
+    marginR,
+    marginT,
+    marginB
   } = params;
   console.log(
     "DEBUG: Received params in generate-complete-video:",
@@ -1582,14 +1700,62 @@ electron.ipcMain.handle("generate-complete-video", async (event, params) => {
       female: "es-MX-DaliaNeural"
     };
     const voiceName = voiceMap[voiceGender] || "es-MX-DaliaNeural";
-    const { jsonPath: wordTimingsPath } = await generateVoice(
-      content.guion_mejorado,
-      voiceName,
-      audioPath
-    );
+    let wordTimingsPath = "";
+    try {
+      const voiceResult = await generateVoice(
+        content.guion_mejorado,
+        voiceName,
+        audioPath
+      );
+      wordTimingsPath = voiceResult.jsonPath;
+    } catch (err) {
+      logger.error(`[CRITICAL] Voice generation failed: ${err}`);
+    }
     const audioDuration = await getAudioDuration(audioPath);
     logger.log(`Audio generado. Duración: ${audioDuration}s`);
     const videoDuration = audioDuration || duration;
+    let imageDurations = [];
+    try {
+      if (fs.existsSync(wordTimingsPath)) {
+        const wordTimings = JSON.parse(
+          fs.readFileSync(wordTimingsPath, "utf-8")
+        );
+        let scenesText = [];
+        if (manualScript && manualImages && manualImages.length > 0) {
+          scenesText = manualScript.split(/\n\n+/).filter((s) => s.trim().length > 0);
+          if (scenesText.length !== manualImages.length) {
+            scenesText = manualScript.split(/\n+/).filter((s) => s.trim().length > 0);
+          }
+        } else {
+          scenesText = content.escenas?.map((e) => e.texto) || [];
+        }
+        if (manualScript && manualImages && scenesText.length !== manualImages.length) {
+          logger.log(
+            `[SceneSync] Mismatch: ${scenesText.length} scenes vs ${manualImages.length} images. Forcing Equal Distribution.`
+          );
+          imageDurations = [];
+        } else if (scenesText.length > 0) {
+          const fullScriptClean = scenesText.join("");
+          const totalChars = fullScriptClean.length;
+          if (totalChars > 0 && audioDuration) {
+            imageDurations = scenesText.map((scene) => {
+              const ratio = scene.length / totalChars;
+              return parseFloat((ratio * audioDuration).toFixed(2));
+            });
+            if (imageDurations.length > 0) {
+              const currentTotal = imageDurations.reduce((a, b) => a + b, 0);
+              const diff = audioDuration - currentTotal;
+              imageDurations[imageDurations.length - 1] += diff;
+            }
+            logger.log(
+              `[SceneSync] Durations calculated by CharRatio: ${JSON.stringify(imageDurations)}`
+            );
+          }
+        }
+      }
+    } catch (e) {
+      logger.error(`[SceneSync] Error calculating scene durations: ${e}`);
+    }
     if (!manualImages) {
       event.sender.send("video-progress", {
         step: "Creando imágenes de las escenas...",
@@ -1617,6 +1783,8 @@ electron.ipcMain.handle("generate-complete-video", async (event, params) => {
       outputPath,
       duration: videoDuration,
       aspectRatio,
+      imageDurations,
+      // Pass calculated durations
       avatarPath,
       avatarPosition,
       avatarSize,
@@ -1627,13 +1795,18 @@ electron.ipcMain.handle("generate-complete-video", async (event, params) => {
         fontSize,
         wordsPerLine: params.wordsPerLine,
         linesPerSubtitle,
-        style: subtitleStyleType,
+        borderWidth: borderWidth || "medium",
+        borderColor: borderColor || "#000000",
         position: subtitlePosition,
         subtitleTextAlign,
         useGeneralStyle: params.useGeneralStyle,
         fontFamily: params.fontFamily,
         fontWeight: params.fontWeight,
-        lineStyles: params.lineStyles
+        lineStyles: params.lineStyles,
+        marginL,
+        marginR,
+        marginT,
+        marginB
       },
       subtitles: generateSubtitles(
         content.guion_mejorado,

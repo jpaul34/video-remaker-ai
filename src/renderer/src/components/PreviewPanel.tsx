@@ -7,7 +7,8 @@ interface PreviewPanelProps {
   aspectRatio: string;
   subtitleColor: string;
   fontSize: number;
-  subtitleStyleType: string;
+  borderWidth: "thin" | "medium" | "thick";
+  borderColor: string;
   fontWeight: string;
   subtitlePosition: string;
   subtitleTextAlign: string;
@@ -29,6 +30,10 @@ interface PreviewPanelProps {
   useGeneralStyle: boolean;
   fontFamily: string;
   lineStyles: LineStyle[];
+  marginL: number;
+  marginR: number;
+  marginT: number;
+  marginB: number;
 }
 
 const PreviewPanel: React.FC<PreviewPanelProps> = ({
@@ -36,7 +41,8 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({
   aspectRatio,
   subtitleColor,
   fontSize,
-  subtitleStyleType,
+  borderWidth,
+  borderColor,
   fontWeight,
   subtitlePosition,
   subtitleTextAlign,
@@ -58,6 +64,10 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({
   useGeneralStyle,
   fontFamily,
   lineStyles,
+  marginL,
+  marginR,
+  marginT,
+  marginB,
 }) => {
   // Calculate avatar position
   const getAvatarPosition = () => {
@@ -200,6 +210,12 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({
               const [w, h] = aspectRatio.split(":").map(Number);
               const isHorizontal = w / h > 800 / 600;
               const virtualHeight = aspectRatio === "9:16" ? 1920 : 1080;
+              const virtualWidth = aspectRatio === "9:16" ? 1080 : 1920;
+
+              const marginLCqw = (marginL / virtualWidth) * 100;
+              const marginRCqw = (marginR / virtualWidth) * 100;
+              const marginTCqh = (marginT / virtualHeight) * 100;
+              const marginBCqh = (marginB / virtualHeight) * 100;
               const commonStyle = {
                 aspectRatio: `${w}/${h}`,
                 width: isHorizontal ? "100%" : "auto",
@@ -255,19 +271,16 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({
                     }}
                   ></div>
 
-                  {/* Subtitle Preview */}
-                  <div className="absolute inset-0 pointer-events-none p-4">
+                  <div className="absolute inset-0 pointer-events-none">
                     <div
-                      className={`absolute px-4 ${getSubtitlePosition()}`}
+                      className={`absolute ${getSubtitlePosition()}`}
                       style={{
-                        paddingBottom: subtitlePosition.includes("bottom")
-                          ? "5cqh"
-                          : "0",
-                        paddingTop: subtitlePosition.includes("top")
-                          ? "5cqh"
-                          : "0",
+                        paddingLeft: `${marginLCqw}cqw`,
+                        paddingRight: `${marginRCqw}cqw`,
+                        paddingTop: `${marginTCqh}cqh`,
+                        paddingBottom: `${marginBCqh}cqh`,
                         textAlign: "center", // Apply to container of lines
-                        maxWidth: "90%", // Apply to container of lines
+                        maxWidth: "100%", // Full width, margins handle the rest
                         wordWrap: "break-word",
                         whiteSpace: "pre-wrap",
                         lineHeight: "1.2",
@@ -300,26 +313,18 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({
                                   color: subtitleColor,
                                   fontSize: fontSize,
                                   fontFamily: fontFamily,
-                                  styleType: subtitleStyleType,
                                   fontWeight: fontWeight,
                                 };
 
-                          const textShadow =
-                            lineStyle.styleType === "outline"
-                              ? "2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 0 2px 0 #000, 0 -2px 0 #000, 2px 0 0 #000, -2px 0 0 #000"
-                              : "none";
-
-                          const backgroundColor =
-                            lineStyle.styleType === "shadow" ||
-                            lineStyle.styleType === "background"
-                              ? "rgba(0, 0, 0, 1.0)"
-                              : "transparent";
-
-                          const padding =
-                            lineStyle.styleType === "shadow" ||
-                            lineStyle.styleType === "background"
-                              ? "0.3em 0.6em"
-                              : "0";
+                          // Map border width to pixel values for preview
+                          // Using webkit-text-stroke for clean border rendering
+                          // Values scaled to approximate ASS Outline appearance
+                          const borderWidthMap = {
+                            thin: 3, // ASS uses 4px
+                            medium: 6, // ASS uses 8px
+                            thick: 10, // ASS uses 14px
+                          };
+                          const borderPx = borderWidthMap[borderWidth];
 
                           return (
                             <div
@@ -332,11 +337,13 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({
                                     : subtitleTextAlign === "right"
                                       ? "flex-end"
                                       : "center",
+                                alignItems: "center",
                                 width: "100%",
-                                margin: "0.1em 0",
+                                paddingLeft: "20px",
+                                paddingRight: "20px",
                               }}
                             >
-                              <div
+                              <span
                                 style={{
                                   color: lineStyle.color,
                                   fontSize: `${(lineStyle.fontSize / virtualHeight) * 100}cqh`,
@@ -347,25 +354,14 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({
                                       : lineStyle.fontWeight === "semibold"
                                         ? "600"
                                         : "400",
-                                  textShadow,
-                                  backgroundColor,
-                                  padding,
-                                  borderRadius: "0.2em",
-                                  display: "inline-block",
-                                  wordBreak: "break-word",
-                                  maxWidth: "90%",
+                                  textTransform: "uppercase",
+                                  WebkitTextStroke: `${borderPx}px ${borderColor}`,
+                                  paintOrder: "stroke fill",
                                   textAlign: subtitleTextAlign as any,
                                 }}
                               >
-                                {line.split("\\N").map((part, pidx) => (
-                                  <React.Fragment key={pidx}>
-                                    {part.toUpperCase()}
-                                    {pidx < line.split("\\N").length - 1 && (
-                                      <br />
-                                    )}
-                                  </React.Fragment>
-                                ))}
-                              </div>
+                                {line}
+                              </span>
                             </div>
                           );
                         });

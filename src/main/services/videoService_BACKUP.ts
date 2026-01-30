@@ -1,4 +1,4 @@
-﻿import path from "path";
+import path from "path";
 import fs from "fs";
 import ffmpeg from "fluent-ffmpeg";
 import { logger } from "../utils/logger";
@@ -48,8 +48,7 @@ export interface VideoConfig {
   subtitleStyle?: {
     color: string;
     fontSize: number;
-    borderWidth?: "thin" | "medium" | "thick";
-    borderColor?: string;
+    style?: string;
     wordsPerLine?: number;
     linesPerSubtitle?: number;
     position?: string;
@@ -68,16 +67,16 @@ export interface VideoConfig {
 }
 
 export const createVideo = (config: VideoConfig): Promise<string> => {
-  return new Promise(async (resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const {
       imagesDir,
       audioPath,
       outputPath,
       duration,
-      aspectRatio,
-      imageDurations,
+      aspectRatio = "16:9",
     } = config;
 
+    // Normalize paths to use forward slashes for FFmpeg compatibility
     const normOutputPath = outputPath;
 
     // Ensure output directory exists
@@ -86,143 +85,132 @@ export const createVideo = (config: VideoConfig): Promise<string> => {
       fs.mkdirSync(outputDir, { recursive: true });
     }
 
-    // Define resolutions
+    // Define resolutions based on aspect ratio
     const resolutions = {
       "16:9": { w: 1920, h: 1080 },
       "9:16": { w: 1080, h: 1920 },
       "1:1": { w: 1080, h: 1080 },
       "3:4": { w: 810, h: 1080 },
     };
-    const { w, h } = resolutions[aspectRatio || "16:9"] || resolutions["16:9"];
+    const { w, h } = resolutions[aspectRatio] || resolutions["16:9"];
 
-    // Get all images
+    // Get all images from directory (supporting png, bmp, jpg)
     const images = fs
       .readdirSync(imagesDir)
       .filter((file) => /\.(jpg|jpeg|png|bmp)$/i.test(file))
-      .sort()
-      .map((file) => path.join(imagesDir, file));
+      .map((file) => path.join(imagesDir, file))
+      .sort();
 
     if (images.length === 0) {
-      reject(new Error(`No images found in ${imagesDir}`));
-      return;
+      return reject(new Error("No images found in directory"));
     }
 
+    // Calculate duration per image
+    const durationPerImage = duration / images.length;
     const hasCustomDurations =
-      imageDurations && imageDurations.length === images.length;
-    const durationPerImage = hasCustomDurations
-      ? 0
-      : parseFloat((duration / images.length).toFixed(2));
+      config.imageDurations && config.imageDurations.length === images.length;
 
-    logger.log(
-      `[createVideo] Processing ${images.length} images for ${duration}s video at ${w}x${h}`,
+    console.log(
+      `[VideoService] Mode: ${hasCustomDurations ? "Custom Scene Durations" : "Equal Distribution"}`,
     );
-
-    // CRITICAL FIX: Two-stage approach for BMP static images
-    // Stage 1: Convert each BMP to a video segment with proper duration
-    const tempDir = path.join(path.dirname(outputPath), "temp_segments");
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
-
-    const videoSegments: string[] = [];
-
-    for (let i = 0; i < images.length; i++) {
-      const img = images[i];
-      const imgDuration = hasCustomDurations
-        ? imageDurations![i]
-        : durationPerImage;
-
-      const segmentPath = path.join(
-        tempDir,
-        `segment_${i.toString().padStart(3, "0")}.mp4`,
+    if (hasCustomDurations) {
+      console.log(
+        `[VideoService] Durations: ${JSON.stringify(config.imageDurations)}`,
       );
-
-      await new Promise<void>((resolveSegment, rejectSegment) => {
-        logger.log(
-          `[createVideo] Creating segment ${i + 1}/${images.length}: ${imgDuration}s`,
-        );
-
-        ffmpeg(img)
-          .inputOptions(["-loop", "1", "-framerate", "30"])
-          .videoFilters([
-            `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`,
-            "format=yuv420p",
-          ])
-          .outputOptions([
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-crf",
-            "28",
-            "-t",
-            `${imgDuration}`,
-            "-pix_fmt",
-            "yuv420p",
-          ])
-          .output(segmentPath)
-          .on("end", () => {
-            videoSegments.push(segmentPath);
-            resolveSegment();
-          })
-          .on("error", (err) => {
-            logger.error(`[createVideo] Segment ${i} error: ${err.message}`);
-            rejectSegment(err);
-          })
-          .run();
-      });
     }
 
-    logger.log(
-      `[createVideo] All ${videoSegments.length} segments created. Concatenating...`,
-    );
-
-    // Stage 2: Concat video segments with audio
-    const inputListPath = path.join(
-      path.dirname(outputPath),
-      "segments_list.txt",
-    );
-    const inputListContent = videoSegments
-      .map((seg) => `file '${seg.replace(/\\/g, "/")}'`)
+    // Create input file list for ffmpeg
+    const inputListPath = path.join(path.dirname(outputPath), "input_list.txt");
+    let inputListContent = images
+      .map((img, index) => {
+        const imgDuration = hasCustomDurations
+          ? config.imageDurations![index]
+          : durationPerImage;
+        return `file '${img.replace(/\\/g, "/")}'
+duration ${imgDuration}`;
+      })
       .join("\n");
 
-    fs.writeFileSync(inputListPath, inputListContent);
-    logger.log(`[createVideo] Segments list created`);
+    // Fix: Repeat the last image without duration to ensure the last segment plays fully
+    if (images.length > 0) {
+      const lastImage = images[images.length - 1];
+      inputListContent += `
+file '${lastImage.replace(/\\/g, "/")}'`;
+    }
 
+    fs.writeFileSync(inputListPath, inputListContent);
+
+    // DEBUG: Log the exact content of the input list
+    logger.log(`[createVideo] Input list path: ${inputListPath}`);
+    logger.log(`[createVideo] Input list content:\n${inputListContent}`);
+
+    // Build ffmpeg command
     let command = ffmpeg();
 
+    // Input: concat images
     command = command
       .input(inputListPath)
       .inputOptions(["-f", "concat", "-safe", "0"]);
 
     if (audioPath && fs.existsSync(audioPath)) {
       command = command.input(audioPath);
+      // Explicitly map streams to ensure audio is included
+      // Map 0:v (video from images) and 1:a (audio from file)
       command.outputOptions(["-map", "0:v", "-map", "1:a"]);
-      command.outputOptions(["-c:a", "aac", "-b:a", "128k", "-ac", "2"]);
+      // Ensure audio codec is set to AAC as per specs, and fix sync issues with async resampling
+      command.outputOptions([
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-ac",
+        "2", // Force stereo
+      ]);
     }
 
-    // Copy video since segments are already encoded
+    const videoFilters = [
+      // Simple scale and format, no complex zoompan
+      `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`,
+      "fps=fps=30",
+      "format=yuv420p",
+    ];
+
+    command.videoFilters(videoFilters);
+
+    // Output settings
     command = command
-      .outputOptions(["-c:v", "copy", "-movflags", "+faststart"])
+      .outputOptions([
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-crf",
+        "28",
+        "-r", // Force constant frame rate
+        "30", // 30 fps
+        "-pix_fmt", // Ensure compatible pixel format
+        "yuv420p",
+        "-t",
+        `${duration}`, // Force exact duration
+      ])
       .output(normOutputPath);
 
-    // Event handlers
+    // Handle events
     command.on("start", (commandLine) => {
-      logger.log(`[createVideo] FFmpeg Concat Command: ${commandLine}`);
+      logger.log(`[createVideo] FFmpeg Command: ${commandLine}`);
     });
 
     command.on("progress", (progress) => {
-      logger.log(`[createVideo] Concat progress: ${progress.percent}% done`);
+      logger.log(`[createVideo] Processing: ${progress.percent}% done`);
     });
 
     command.on("stderr", (stderrLine) => {
-      logger.log(`[createVideo] Concat Stderr: ${stderrLine}`);
+      logger.log(`[createVideo] FFmpeg Stderr: ${stderrLine}`);
     });
 
     command.on("end", () => {
-      logger.log("[createVideo] FFmpeg concat 'end' event triggered");
-
-      // Verify file exists
+      logger.log("[createVideo] FFmpeg 'end' event triggered");
+      // CRITICAL: Verify the file actually exists before resolving
       if (!fs.existsSync(outputPath)) {
         const error = new Error(
           `FFmpeg claimed success but output file doesn't exist: ${outputPath}`,
@@ -233,31 +221,25 @@ export const createVideo = (config: VideoConfig): Promise<string> => {
       }
 
       const fileSize = fs.statSync(outputPath).size;
-      logger.log(`[createVideo] Video completed. File size: ${fileSize} bytes`);
+      logger.log(
+        `[createVideo] Video creation completed successfully. File size: ${fileSize} bytes`,
+      );
 
       // Clean up temp files
-      try {
-        if (fs.existsSync(inputListPath)) fs.unlinkSync(inputListPath);
-        if (fs.existsSync(tempDir)) {
-          fs.readdirSync(tempDir).forEach((file) => {
-            fs.unlinkSync(path.join(tempDir, file));
-          });
-          fs.rmdirSync(tempDir);
-        }
-      } catch (e) {
-        logger.log(`[createVideo] Cleanup warning: ${e}`);
+      if (fs.existsSync(inputListPath)) {
+        fs.unlinkSync(inputListPath);
       }
-
       resolve(outputPath);
     });
 
     command.on("error", (err, stdout, stderr) => {
-      logger.error(`[createVideo] FFmpeg Concat Error: ${err.message}`);
-      logger.error(`[createVideo] Stderr: ${stderr}`);
+      logger.error(`[createVideo] FFmpeg Error: ${err.message}`);
+      logger.error(`[createVideo] FFmpeg Stderr: ${stderr}`);
       reject(new Error(`FFmpeg error: ${err.message}. Stderr: ${stderr}`));
     });
 
-    logger.log("[createVideo] Starting final concat...");
+    // Run the command
+    logger.log("[createVideo] Starting FFmpeg execution...");
     command.run();
   });
 };
@@ -300,9 +282,7 @@ export const generateCompleteVideo = async (
   );
 
   // 1. Create base video (Images + Audio)
-  logger.log(
-    "generateCompleteVideo: Creando video base (imÃ¡genes + audio)...",
-  );
+  logger.log("generateCompleteVideo: Creando video base (imágenes + audio)...");
   const baseConfig = { ...config, outputPath: tempBaseVideoPath };
   let currentVideoPath = await createVideo(baseConfig);
 
@@ -310,11 +290,11 @@ export const generateCompleteVideo = async (
   if (fs.existsSync(currentVideoPath)) {
     logger.log(`DEBUG: Video base creado exitosamente: ${currentVideoPath}`);
     logger.log(
-      `DEBUG: TamaÃ±o del archivo: ${fs.statSync(currentVideoPath).size} bytes`,
+      `DEBUG: Tamaño del archivo: ${fs.statSync(currentVideoPath).size} bytes`,
     );
   } else {
     logger.error(
-      `ERROR CRÃTICO: Video base NO fue creado: ${currentVideoPath}`,
+      `ERROR CRÍTICO: Video base NO fue creado: ${currentVideoPath}`,
     );
   }
 
@@ -399,31 +379,25 @@ export const generateCompleteVideo = async (
         subtitleColor: config.subtitleStyle?.color || "#FFFF00",
         fontSize: config.subtitleStyle?.fontSize || 48,
         fontWeight: config.subtitleStyle?.fontWeight || "bold",
-        borderWidth: (config.subtitleStyle as any)?.borderWidth || "medium",
-        borderColor: (config.subtitleStyle as any)?.borderColor || "#000000",
+        subtitleStyleType: config.subtitleStyle?.style || "outline",
         subtitleTextAlign:
           (config.subtitleStyle as any)?.subtitleTextAlign || "center",
-        subtitlePosition: config.subtitleStyle?.position || "bottom-center",
         lineStyles: config.subtitleStyle?.lineStyles || [],
         videoHeight: resolutions[config.aspectRatio || "16:9"].h,
         videoWidth: resolutions[config.aspectRatio || "16:9"].w,
-        marginL: (config.subtitleStyle as any)?.marginL,
-        marginR: (config.subtitleStyle as any)?.marginR,
-        marginT: (config.subtitleStyle as any)?.marginT,
-        marginB: (config.subtitleStyle as any)?.marginB,
       },
     );
 
     logger.log(
-      `generateCompleteVideo: Aplicando ${grouped.length} bloques de subtÃ­tulos (Words/Line: ${wordsPerLine})...`,
+      `generateCompleteVideo: Aplicando ${grouped.length} bloques de subtítulos (Words/Line: ${wordsPerLine})...`,
     );
 
     // DEBUG: Verify video exists before adding subtitles
     if (fs.existsSync(currentVideoPath)) {
-      logger.log(`DEBUG: Video para subtÃ­tulos existe: ${currentVideoPath}`);
+      logger.log(`DEBUG: Video para subtítulos existe: ${currentVideoPath}`);
     } else {
       logger.error(
-        `ERROR CRÃTICO: Video para subtÃ­tulos NO existe: ${currentVideoPath}`,
+        `ERROR CRÍTICO: Video para subtítulos NO existe: ${currentVideoPath}`,
       );
     }
 

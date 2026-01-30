@@ -328,6 +328,12 @@ export function generateAssContent(
     videoWidth: number;
     videoHeight: number;
     alignment: number;
+    borderWidth?: "thin" | "medium" | "thick";
+    borderColor?: string;
+    marginL?: number;
+    marginR?: number;
+    marginT?: number;
+    marginB?: number;
   },
 ): string {
   const {
@@ -337,6 +343,12 @@ export function generateAssContent(
     videoWidth,
     videoHeight,
     alignment,
+    borderWidth = "medium",
+    borderColor = "#000000",
+    marginL = 120,
+    marginR = 120,
+    marginT = 120,
+    marginB = 120,
   } = config;
   logger.log(
     `[generateAssContent] Config - Alignment: ${alignment}, Size: ${fontSize}, Weight: ${fontWeight}, Font: ${fontFamily}`,
@@ -350,6 +362,35 @@ export function generateAssContent(
 
   const isBoldValue = 0; // Prefer tags for explicit control
 
+  // Map border width to outline pixel values
+  // Larger values for HD video (1080p+)
+  const borderWidthMap = {
+    thin: 4, // Was 2, increased for visibility
+    medium: 8, // Was 3, increased for visibility
+    thick: 14, // Was 5, increased for visibility
+  };
+  const outlineWidth = borderWidthMap[borderWidth];
+
+  logger.log(
+    `[generateAssContent] Border Config - borderWidth: ${borderWidth}, outlineWidth: ${outlineWidth}, borderColor: ${borderColor}`,
+  );
+
+  // Convert hex borderColor to ASS format (&HAABBGGRR)
+  const hexToAssColor = (hex: string): string => {
+    const cleanHex = hex.replace("#", "");
+    if (cleanHex.length !== 6) return "&H00000000"; // fallback to black
+    const r = cleanHex.substring(0, 2);
+    const g = cleanHex.substring(2, 4);
+    const b = cleanHex.substring(4, 6);
+    // ASS uses BGR byte order
+    return `&H00${b}${g}${r}`.toUpperCase();
+  };
+  const outlineColorASS = hexToAssColor(borderColor);
+
+  logger.log(
+    `[generateAssContent] Color conversion - Input: ${borderColor}, Output: ${outlineColorASS}`,
+  );
+
   let content = `[Script Info]
 ScriptType: v4.00+
 PlayResX: ${playResX}
@@ -358,8 +399,8 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fontFamily},${fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,8,2,${alignment},120,120,180,1
-Style: Opaque,${fontFamily},${fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,3,24,0,${alignment},120,120,180,1
+Style: Default,${fontFamily},${fontSize},&H00FFFFFF,&H000000FF,${outlineColorASS},&H80000000,0,0,0,0,100,100,0,0,1,${outlineWidth},0,${alignment},${marginL},${marginR},${alignment >= 7 ? marginT : marginB},1
+Style: Opaque,${fontFamily},${fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,3,24,0,${alignment},${marginL},${marginR},${alignment >= 7 ? marginT : marginB},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -387,11 +428,17 @@ export const groupSubtitles = (
     subtitleColor: string;
     fontSize: number;
     fontWeight: string;
-    subtitleStyleType?: string;
+    borderWidth?: "thin" | "medium" | "thick";
+    borderColor?: string;
     subtitleTextAlign?: string;
     lineStyles: any[];
     videoHeight: number;
     videoWidth: number;
+    marginL?: number;
+    marginR?: number;
+    marginT?: number;
+    marginB?: number;
+    subtitlePosition?: string;
   },
 ): Array<{ text: string; start: number; end: number; style?: string }> => {
   if (subtitles.length === 0) return [];
@@ -410,16 +457,33 @@ export const groupSubtitles = (
   const textAlign = styling?.subtitleTextAlign || "center";
   const fontSize = styling?.fontSize || 64;
 
-  let anTag = "5"; // Default center
+  const marginL = styling?.marginL ?? 120;
+  const marginR = styling?.marginR ?? 120;
+  const marginT = styling?.marginT ?? 120;
+  const marginB = styling?.marginB ?? 120;
+  const subPos = styling?.subtitlePosition || "bottom-center";
+  const posBase = subPos.split("-")[0]; // top, middle, bottom
+
+  // Calculate anTag (Alignment) based on ASS standard 1-9
+  // Horizontal: 1=left, 2=center, 3=right
+  // Vertical: 0=bottom, 3=middle, 6=top
+  let hAlign = 2; // default center
+  if (textAlign === "left") hAlign = 1;
+  if (textAlign === "right") hAlign = 3;
+
+  let vAlign = 0; // default bottom
+  if (posBase === "top") vAlign = 6;
+  if (posBase === "middle") vAlign = 3;
+
+  const anTag = (vAlign + hAlign).toString();
+
+  // Calculate targetX based on horizontal alignment and margins
   let targetX = vW / 2;
   if (textAlign === "left") {
-    anTag = "4";
-    targetX = 120;
+    targetX = marginL;
   } else if (textAlign === "right") {
-    anTag = "6";
-    targetX = vW - 120;
+    targetX = vW - marginR;
   }
-
   for (let i = 0; i < subtitles.length; i++) {
     currentGroup.push(subtitles[i]);
 
@@ -444,8 +508,22 @@ export const groupSubtitles = (
           let lineStyledText = "";
           let lineStyleName = "Default";
 
-          const targetY =
-            vH / 2 + (lineIdx - (linesPerSubtitle - 1) / 2) * (fontSize * 1.5);
+          let targetY = 0;
+          if (posBase === "top") {
+            targetY = marginT + lineIdx * (fontSize * 1.5);
+          } else if (posBase === "middle") {
+            const safeHeight = vH - marginT - marginB;
+            const safeCenter = marginT + safeHeight / 2;
+            targetY =
+              safeCenter +
+              (lineIdx - (linesPerSubtitle - 1) / 2) * (fontSize * 1.5);
+          } else {
+            // bottom
+            targetY =
+              vH -
+              marginB -
+              (linesPerSubtitle - 1 - lineIdx) * (fontSize * 1.5);
+          }
 
           for (let l = 0; l < lineWords.length; l++) {
             const wordObj = lineWords[l];
@@ -453,7 +531,6 @@ export const groupSubtitles = (
             let size = styling?.fontSize || 48;
             let font = styling?.fontFamily || "Arial";
             let weight = styling?.fontWeight || "bold";
-            let stype = styling?.subtitleStyleType || "outline";
 
             if (
               styling &&
@@ -465,10 +542,9 @@ export const groupSubtitles = (
               if (ls.fontSize) size = ls.fontSize;
               if (ls.fontFamily) font = ls.fontFamily;
               if (ls.fontWeight) weight = ls.fontWeight;
-              if (ls.styleType) stype = ls.styleType;
             }
 
-            if (stype === "shadow") lineStyleName = "Opaque";
+            // Always use standard style (outline-based), no shadow/opaque
 
             const assColor = hexToAssColor(color);
             let weightTag = "\\b400";
@@ -480,9 +556,7 @@ export const groupSubtitles = (
           }
 
           // Apply absolute positioning and alignment override
-          // NEW: Add \be8 for soft/rounded-ish box edges when using Opaque style
-          const blurTag = lineStyleName === "Opaque" ? "\\be8" : "";
-          const finalText = `{\\an${anTag}${blurTag}\\pos(${targetX.toFixed(0)},${targetY.toFixed(0)})}${lineStyledText.trim()}`;
+          const finalText = `{\\an${anTag}\\pos(${targetX.toFixed(0)},${targetY.toFixed(0)})}${lineStyledText.trim()}`;
 
           finalSegments.push({
             text: finalText,

@@ -4,7 +4,6 @@ export interface LineStyle {
   color: string;
   fontSize: number;
   fontFamily: string;
-  styleType: string; // none, outline, shadow
   fontWeight: string; // normal, semibold, bold
 }
 
@@ -27,7 +26,10 @@ export const useVideoConfig = () => {
   const [subtitleColor, setSubtitleColor] = useState("#FFFF00");
   const [fontSize, setFontSize] = useState(48);
   const [wordsPerLine, setWordsPerLine] = useState(1);
-  const [subtitleStyleType, setSubtitleStyleType] = useState("outline"); // outline, shadow, none
+  const [borderWidth, setBorderWidth] = useState<"thin" | "medium" | "thick">(
+    "medium",
+  ); // border thickness
+  const [borderColor, setBorderColor] = useState("#000000"); // border color (black by default)
   const [fontWeight, setFontWeight] = useState("bold"); // normal, semibold, bold
   const [useMock, setUseMock] = useState(false);
   const [previewText, setPreviewText] = useState(
@@ -38,27 +40,28 @@ export const useVideoConfig = () => {
   const [linesPerSubtitle, setLinesPerSubtitle] = useState(1);
   const [useGeneralStyle, setUseGeneralStyle] = useState(true);
   const [fontFamily, setFontFamily] = useState("Arial");
+  const [marginL, setMarginL] = useState(120);
+  const [marginR, setMarginR] = useState(120);
+  const [marginT, setMarginT] = useState(120);
+  const [marginB, setMarginB] = useState(120);
 
   const defaultLineStyles: LineStyle[] = [
     {
       color: "#FFFF00",
       fontSize: 48,
       fontFamily: "Arial",
-      styleType: "outline",
       fontWeight: "bold",
     },
     {
       color: "#FFFFFF",
       fontSize: 48,
       fontFamily: "Arial",
-      styleType: "outline",
       fontWeight: "bold",
     },
     {
       color: "#00FFFF",
       fontSize: 48,
       fontFamily: "Arial",
-      styleType: "outline",
       fontWeight: "bold",
     },
   ];
@@ -84,7 +87,8 @@ export const useVideoConfig = () => {
     setSubtitleColor("#FFFF00");
     setFontSize(48);
     setWordsPerLine(1);
-    setSubtitleStyleType("outline");
+    setBorderWidth("medium");
+    setBorderColor("#000000");
     setFontWeight("bold");
     setPreviewText("¡Este es un ejemplo de subtítulo!");
     setSubtitlePosition("middle-center");
@@ -96,6 +100,10 @@ export const useVideoConfig = () => {
     setMode("ai");
     setManualScript("");
     setManualImages([]);
+    setMarginL(120);
+    setMarginR(120);
+    setMarginT(120);
+    setMarginB(120);
   };
 
   return {
@@ -135,8 +143,10 @@ export const useVideoConfig = () => {
     setFontSize,
     wordsPerLine,
     setWordsPerLine,
-    subtitleStyleType,
-    setSubtitleStyleType,
+    borderWidth,
+    setBorderWidth,
+    borderColor,
+    setBorderColor,
     fontWeight,
     setFontWeight,
     useMock,
@@ -155,6 +165,14 @@ export const useVideoConfig = () => {
     setFontFamily,
     lineStyles,
     setLineStyles,
+    marginL,
+    setMarginL,
+    marginR,
+    setMarginR,
+    marginT,
+    setMarginT,
+    marginB,
+    setMarginB,
     resetConfig,
   };
 };
