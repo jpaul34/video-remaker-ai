@@ -2,3 +2,6 @@
 /.env.example
 /.venv
 node_modules
+dist
+out
+temp

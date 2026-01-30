@@ -61,8 +61,8 @@ interface VideoConfig {
     text: string;
     start: number;
     end: number;
-  }>;
   aspectRatio?: "16:9" | "9:16" | "1:1" | "3:4";
+  imageDurations?: number[];
 }
 
 export const createVideo = (config: VideoConfig): Promise<string> => {
@@ -106,14 +106,19 @@ export const createVideo = (config: VideoConfig): Promise<string> => {
 
     // Calculate duration per image
     const durationPerImage = duration / images.length;
+    const hasCustomDurations =
+      config.imageDurations &&
+      config.imageDurations.length === images.length;
 
     // Create input file list for ffmpeg
     const inputListPath = path.join(path.dirname(outputPath), "input_list.txt");
     let inputListContent = images
-      .map(
-        (img) =>
-          `file '${img.replace(/\\/g, "/")}'\nduration ${durationPerImage}`,
-      )
+      .map((img, index) => {
+        const imgDuration = hasCustomDurations
+          ? config.imageDurations![index]
+          : durationPerImage;
+        return `file '${img.replace(/\\/g, "/")}'\nduration ${imgDuration}`;
+      })
       .join("\n");
 
     // Fix: Repeat the last image without duration to ensure the last segment plays fully

@@ -13,6 +13,7 @@ interface VideoGenerationResult {
   prompts_imagen: string[];
   imagenes_generadas: string[];
   duracion_estimada: string;
+  escenas: { texto: string; descripcion_visual: string }[];
 }
 
 // Helper for exponential backoff
@@ -124,6 +125,7 @@ export const generateVideoContent = async (
       prompts_imagen: imagePrompts,
       imagenes_generadas: generatedImages,
       duracion_estimada: `${duration} segundos`,
+      escenas: mockData.escenas || [],
     };
   }
 
@@ -190,6 +192,7 @@ export const generateVideoContent = async (
       prompts_imagen: imagePrompts,
       imagenes_generadas: generatedImages,
       duracion_estimada: `${duration} segundos`,
+      escenas: scriptData.escenas || [],
     };
   } catch (error) {
     console.error("Error generating video content:", error);
