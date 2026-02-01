@@ -5,3 +5,11 @@ node_modules
 dist
 out
 temp
+node_modules/
+dist/
+out/
+temp/
+temp_test_run/
+backups/
+.venv/
+.env
