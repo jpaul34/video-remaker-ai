@@ -69,6 +69,18 @@ video-remaker-ai/
 - Python 3.10+
 - FFmpeg configurado en el PATH global
 
+> [!CAUTION]
+> **Dependencia Crítica:** El motor de renderizado **no funcionará** sin la configuración manual de FFmpeg.
+
+### ⚙️ Configuración de FFmpeg
+
+> **Nota:** Este paso es indispensable para el renderizado de video y el procesamiento de audio por parte del motor de IA.
+
+1. Descarga el binario de FFmpeg (versión para Windows).
+2. Ubica el archivo `ffmpeg.exe` en la siguiente ruta:
+   `resources/ffmpeg.exe`
+3. Asegúrate de que el archivo tenga permisos de ejecución.
+
 ### Instalación
 
 1. **Clonación y Dependencias**:
